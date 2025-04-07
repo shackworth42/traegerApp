@@ -1,21 +1,44 @@
 import React, { useState } from 'react';
 import Plot from 'react-plotly.js';
 
-const TempPlot = ({ title, x, y, lineColor, isTSS }) => {
+const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
   const [layout, setLayout] = useState(null);
   const [hover, setHover] = useState(true);
+  
 
   const handleRelayout = (newLayout) => {
-    if (newLayout['xaxis.range[0]'] && newLayout['xaxis.range[1]']) {
-      setLayout(prev => ({
-        ...prev,
-        xaxis: {
-          ...prev?.xaxis,
-          range: [newLayout['xaxis.range[0]'], newLayout['xaxis.range[1]']],
-        },
-      }));
+    const yMin = newLayout['yaxis.range[0]'];
+    const yMax = newLayout['yaxis.range[1]'];
+    const xMin = newLayout['xaxis.range[0]'];
+    const xMax = newLayout['xaxis.range[1]'];
+  
+    let newDtick = initialDtick;
+  
+    if (typeof yMin === 'number' && typeof yMax === 'number') {
+      const yRange = yMax - yMin;
+  
+      if (yRange <= 10) newDtick = 1;
+      else if (yRange <= 20) newDtick = 2;
+      else if (yRange <= 40) newDtick = 5;
+      else if (yRange <= 80) newDtick = 10;
+      else newDtick = initialDtick;
     }
+  
+    setLayout(prev => ({
+      ...prev,
+      xaxis: {
+        ...prev?.xaxis,
+        range: xMin && xMax ? [xMin, xMax] : prev?.xaxis?.range,
+      },
+      yaxis: {
+        ...prev?.yaxis,
+        range: yMin && yMax ? [yMin, yMax] : prev?.yaxis?.range,
+        dtick: newDtick,
+        tickmode: 'linear',
+      },
+    }));
   };
+  
 
   const handleResetZoom = () => {
     setLayout(prev => ({
@@ -68,7 +91,7 @@ const TempPlot = ({ title, x, y, lineColor, isTSS }) => {
         font: { size: 12, color: '#ffffff' },
       },
       tickmode: 'linear',
-      dtick: 40,
+      dtick: layout?.yaxis?.dtick ?? initialDtick,
       range: [yMin - yBuffer, yMax + yBuffer],
       showgrid: true,
       gridcolor: '#CC5C30',

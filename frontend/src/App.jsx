@@ -22,55 +22,56 @@ function App() {
   const [cookTimerRemaining, setCookTimerRemaining] = useState(null);
 
 // Fetch past data from /api/history on initial load
-  useEffect(() => {
-    fetch("https://traeger-backend.onrender.com/api/stats")
+useEffect(() => {
+  fetch(`http://localhost:8000/api/history`)
+    .then(res => res.json())
+    .then(data => {
+      const parsed = data.map(d => ({
+        ...d,
+        time: new Date(d.time * 1000), // convert UNIX timestamp to Date
+      }));
+      setDataPoints(parsed); // preload dataPoints with past data
+    })
+    .catch(err => console.error("Failed to fetch history:", err));
+}, []);
+
+useEffect(() => {
+  const interval = setInterval(() => {
+    fetch(`http://localhost:8000/api/stats`)
       .then(res => res.json())
       .then(data => {
-        const parsed = data.map(d => ({
-          ...d,
-          time: new Date(d.time * 1000), // convert UNIX timestamp to Date
-        }));
-        setDataPoints(parsed); // preload dataPoints with past data
-      });
-  }, []);
+        const now = new Date();
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetch("http://localhost:8000/api/stats")
-        .then(res => res.json())
-        .then(data => {
-          console.log("📦 Full /api/stats response:", data);  // ← Add this line
-          const now = new Date();
-        
-          if (data.grill_temp === 0 && data.probe_temp === 0) return;
-        
-          const newPoint = {
-            time: now,
-            grill_temp: data.grill_temp,
-            probe_temp: data.probe_temp,
-          };
-        
-          setDataPoints(prev => [...prev, newPoint]);
-          setIsSimulated(data.is_simulated || false);
-          setIsIdle(data.is_idle || false);
-          setIsStale(data.is_stale || false);
-        
-          setGrillSet(data.grill_set ?? null);
-          setProbeSet(data.probe_set ?? null);
-          setConnected(data.connected ?? null);
-          setAmbientTemp(data.ambient_temp ?? null);
-          setLastConnected(data.last_connected ?? null);
-        
-          if (!sessionStartTime && data.session_start_time) {
-            setSessionStartTime(new Date(data.session_start_time));
-          }
-        
-          setCookTimerRemaining(data.cook_timer_remaining ?? null);
-        });
-        
-    }, 2000);
-    return () => clearInterval(interval);
-  }, []);
+        if (data.grill_temp === 0 && data.probe_temp === 0) return;
+
+        const newPoint = {
+          time: now,
+          grill_temp: data.grill_temp,
+          probe_temp: data.probe_temp,
+        };
+
+        setDataPoints(prev => [...prev, newPoint]);
+        setIsSimulated(data.is_simulated || false);
+        setIsIdle(data.is_idle || false);
+        setIsStale(data.is_stale || false);
+
+        setGrillSet(data.grill_set ?? null);
+        setProbeSet(data.probe_set ?? null);
+        setConnected(data.connected ?? null);
+        setAmbientTemp(data.ambient_temp ?? null);
+        setLastConnected(data.last_connected ?? null);
+
+        if (!sessionStartTime && data.session_start_time) {
+          setSessionStartTime(new Date(data.session_start_time));
+        }
+
+        setCookTimerRemaining(data.cook_timer_remaining ?? null);
+      })
+      .catch(err => console.error("Failed to fetch stats:", err));
+  }, 2000);
+
+  return () => clearInterval(interval);
+}, []);
 
   const formatTimeSinceStart = (seconds) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
@@ -207,8 +208,8 @@ return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Charts (Left 2/3) */}
         <div className="lg:col-span-2 space-y-6 bg-[#CC5C30] p-4 rounded-md shadow-md">
-          <TempPlot title="Grill Temperature" x={isTSS ? grillTSS : grillX} y={grillY} lineColor="#ffffff" isTSS={isTSS} />
-          <TempPlot title="Probe Temperature" x={isTSS ? probeTSS : probeX} y={probeY} lineColor="#ffffff" isTSS={isTSS} />
+          <TempPlot title="Grill Temperature" x={isTSS ? grillTSS : grillX} y={grillY} lineColor="#ffffff" isTSS={isTSS} initialDtick={30} />
+          <TempPlot title="Probe Temperature" x={isTSS ? probeTSS : probeX} y={probeY} lineColor="#ffffff" isTSS={isTSS} initialDtick={15} />
         </div>
 
         {/* Stats (Right 1/3) */}

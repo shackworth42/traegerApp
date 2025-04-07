@@ -31,8 +31,8 @@ const StatCard = ({
     </div>
 
     {sd !== null && (
-      <div className="text-xs text-gray-600 mb-1">
-        ±SD: {sd.toFixed(1)}{unit}
+      <div className="text-xs text-black mb-1">
+       <strong>±SD:</strong>  {sd.toFixed(1)}{unit}
       </div>
     )}
 
