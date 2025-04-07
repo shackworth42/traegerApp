@@ -5,6 +5,13 @@ import time
 import threading
 import random
 import math
+from .state import latest
+from .idle_watcher import idle_loop
+from .models import Session as SessionModel
+from .db import init_db, get_db
+from sqlmodel import Session as DBSession
+init_db()
+
 
 # === CONFIGURATION ===
 SIMULATE = True  # Force simulate mode for standalone app
@@ -13,6 +20,7 @@ AMBIENT_TEMP = 70.0
 SIM_DURATION = 60 * 60 * 3
 FAN_OSCILLATION_PERIOD = 300
 FAN_OSCILLATION_AMPLITUDE = 5
+WAKE_THRESHOLD_SECONDS = 5
 
 # === SHARED STATE ===
 latest = {
@@ -43,7 +51,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+def idle_loop():
+    while True:
+        time.sleep(2)
+        now = time.time()
+        last_conn = latest.get("last_connected")
 
+        if last_conn and abs(now - last_conn) <= 5:
+            latest["is_idle"] = False
+        else:
+            if not latest["is_idle"]:
+                print("💤 Entering idle state.")
+
+                # End the session
+                with DBSession(engine) as db:
+                    last_session = db.query(SessionModel).order_by(SessionModel.id.desc()).first()
+                    if last_session and last_session.end is None:
+                        last_session.end = datetime.fromtimestamp(now)
+                        last_session.duration = now - last_session.start.timestamp()
+                        db.commit()
+
+            latest["is_idle"] = True
+            
+            
 # === SIMULATION MODE ===
 def simulate_data():
     print("🔥 Simulated mode enabled (Grill warm-up in 10 minutes)")
@@ -97,13 +127,26 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
     latest["cook_timer_start"] = cook_start
     latest["cook_timer_end"] = cook_end
 
+    # ✅ Save new session to DB when connection is detected
     if last_conn:
         if not latest["ever_connected"] or last_conn != latest["last_connected"]:
             latest["ever_connected"] = True
             latest["last_connected"] = last_conn
-            sessions.append({"start": now, "end": None, "duration": None})
-            print(f"🔌 Grill connected at {time.ctime(now)}")
+            latest["session_start"] = now
 
+            new_session = SessionModel(
+                start=datetime.fromtimestamp(now),
+                grill_setpoint=gset,
+                probe_setpoint=pset,
+                ambient_temp=ambient
+            )
+            with DBSession(engine) as db:
+                db.add(new_session)
+                db.commit()
+                db.refresh(new_session)
+            print(f"🔌 Grill connected — Session #{new_session.id} started at {datetime.fromtimestamp(now)}")
+
+    # ✅ Keep in-memory data for active session plotting
     data_points.append({
         "time": now,
         "grill_temp": grill,
@@ -115,6 +158,7 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
         "last_connected": last_conn,
     })
 
+    # Trim memory use for long sessions
     if len(data_points) > 10000:
         data_points.pop(0)
 
@@ -146,3 +190,4 @@ def get_sessions():
 
 # === STARTUP ===
 threading.Thread(target=simulate_data, daemon=True).start()
+threading.Thread(target=idle_loop, daemon=True).start()

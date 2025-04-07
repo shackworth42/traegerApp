@@ -1,0 +1,21 @@
+# Node / React
+node_modules/
+dist/
+frontend/.env
+frontend/.env.production
+
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.sqlite3
+traeger_data.db
+.env
+.env.*
+
+# System / Editor
+.DS_Store
+*.log
+.vscode/
+*.swp
