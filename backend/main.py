@@ -1,15 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlmodel import Session as DBSession
+
+from backend.state import latest, data_points, sessions
+from backend.idle_watcher import idle_loop
+from backend.models import Session as SessionModel, CookLog
+from backend.db import init_db, get_db
+
 import os
 import time
 import threading
 import random
 import math
-from .state import latest
-from .idle_watcher import idle_loop
-from .models import Session as SessionModel
-from .db import init_db, get_db
-from sqlmodel import Session as DBSession
+
 init_db()
 
 
@@ -21,23 +24,6 @@ SIM_DURATION = 60 * 60 * 3
 FAN_OSCILLATION_PERIOD = 300
 FAN_OSCILLATION_AMPLITUDE = 5
 WAKE_THRESHOLD_SECONDS = 5
-
-# === SHARED STATE ===
-latest = {
-    "timestamp": 0,
-    "grill_temp": 0,
-    "probe_temp": 0,
-    "grill_setpoint": 0,
-    "probe_setpoint": 0,
-    "cook_timer_start": 0,
-    "cook_timer_end": 0,
-    "cook_timer_remaining": 0,
-    "ambient_temp": None,
-    "connected": False,
-    "last_connected": None,
-    "ever_connected": False,
-    "is_idle": False,
-}
 
 data_points = []
 sessions = []
@@ -127,26 +113,13 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
     latest["cook_timer_start"] = cook_start
     latest["cook_timer_end"] = cook_end
 
-    # ✅ Save new session to DB when connection is detected
     if last_conn:
         if not latest["ever_connected"] or last_conn != latest["last_connected"]:
             latest["ever_connected"] = True
             latest["last_connected"] = last_conn
-            latest["session_start"] = now
+            sessions.append({"start": now, "end": None, "duration": None})
+            print(f"🔌 Grill connected at {time.ctime(now)}")
 
-            new_session = SessionModel(
-                start=datetime.fromtimestamp(now),
-                grill_setpoint=gset,
-                probe_setpoint=pset,
-                ambient_temp=ambient
-            )
-            with DBSession(engine) as db:
-                db.add(new_session)
-                db.commit()
-                db.refresh(new_session)
-            print(f"🔌 Grill connected — Session #{new_session.id} started at {datetime.fromtimestamp(now)}")
-
-    # ✅ Keep in-memory data for active session plotting
     data_points.append({
         "time": now,
         "grill_temp": grill,
@@ -158,9 +131,23 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
         "last_connected": last_conn,
     })
 
-    # Trim memory use for long sessions
+    # ⛔ Optional limit (you may want to keep this or remove it now that it's stored in DB)
     if len(data_points) > 10000:
         data_points.pop(0)
+
+    # ✅ Database logging
+    with Session(get_db()) as session:
+        log = CookLog(
+            timestamp=now,
+            grill_temp=grill,
+            probe_temp=probe,
+            grill_setpoint=gset,
+            probe_setpoint=pset,
+            ambient_temp=ambient,
+            connected=connected
+        )
+        session.add(log)
+        session.commit()
 
 # === API ROUTES ===
 @app.get("/api/stats")

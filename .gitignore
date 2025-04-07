@@ -19,3 +19,7 @@ traeger_data.db
 *.log
 .vscode/
 *.swp
+
+# Local startup scripts
+*.bat
+*.sh

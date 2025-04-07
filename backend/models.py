@@ -1,15 +1,19 @@
-# backend/models.py
-
 from sqlmodel import SQLModel, Field
 from typing import Optional
-from datetime import datetime
+import time
 
 class Session(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    start: datetime
-    end: Optional[datetime] = None
-    duration: Optional[float] = None  # seconds
-    notes: Optional[str] = None
+    start: float
+    end: Optional[float] = None
+    duration: Optional[float] = None
+
+class CookLog(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    timestamp: float = Field(default_factory=lambda: time.time())
+    grill_temp: float
+    probe_temp: float
     grill_setpoint: Optional[float] = None
     probe_setpoint: Optional[float] = None
     ambient_temp: Optional[float] = None
+    connected: Optional[bool] = None
