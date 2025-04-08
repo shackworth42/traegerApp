@@ -11,7 +11,6 @@ function App() {
   const [isSimulated, setIsSimulated] = useState(false);
   const [isIdle, setIsIdle] = useState(false);
   const [sessionStartTime, setSessionStartTime] = useState(null);
-  const [sessionDuration, setSessionDuration] = useState(0);
   const [avgScope, setAvgScope] = useState(10);
   const scopeOptions = ['5', '10', '30', 'all'];
   const [grillSet, setGrillSet] = useState(null);
@@ -71,7 +70,8 @@ useEffect(() => {
   }, 2000);
 
   return () => clearInterval(interval);
-}, []);
+}, [sessionStartTime]);
+
 
   const formatTimeSinceStart = (seconds) => {
     const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
@@ -158,18 +158,14 @@ useEffect(() => {
   }, [dataPoints, avgScope]);  
   
   
-  console.log("probeSet", probeSet);
-  console.log("latestProbe", latestProbe);
-  console.log("sessionStartTime", sessionStartTime);
-  console.log("sessionDuration", sessionDuration);
-  console.log("sessionStartTime", sessionStartTime);
-  console.log("grillSet", grillSet);
 
 
   const isTSS = xAxisMode === 'tss';
 
+  // avoid idle screen if simulate is active
   if (isStale) return <OfflineScreen />;
-  if (isIdle) return <IdleScreen />;
+  if (isIdle && !isSimulated) return <IdleScreen />;
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
     
@@ -199,6 +195,15 @@ return (
       </span>
     </div>
   </div>
+  <button
+  onClick={() =>
+    setXAxisMode((prev) => (prev === 'tss' ? 'clock' : 'tss'))
+  }
+  className="px-2 py-1 text-sm border rounded bg-black text-white hover:bg-gray-700"
+>
+  Toggle X Axis: {xAxisMode === 'tss' ? 'Time Since Start' : 'Clock Time'}
+</button>
+
 </div>
 
 

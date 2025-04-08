@@ -1,23 +1,23 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlmodel import Session as DBSession
-
-from backend.state import latest, data_points, sessions
-from backend.idle_watcher import idle_loop
-from backend.models import Session as SessionModel, CookLog
-from backend.db import init_db, get_db
-
+from sqlmodel import select
+from contextlib import contextmanager
 import os
 import time
 import threading
 import random
 import math
+from datetime import datetime
 
+from backend.state import latest, data_points, sessions
+from backend.models import Session as SessionModel, CookLog
+from backend.db import init_db, get_db
+
+# === INIT DB ===
 init_db()
 
-
 # === CONFIGURATION ===
-SIMULATE = True  # Force simulate mode for standalone app
+SIMULATE = True
 GRILL_TARGET_TEMP = 250
 AMBIENT_TEMP = 70.0
 SIM_DURATION = 60 * 60 * 3
@@ -25,10 +25,7 @@ FAN_OSCILLATION_PERIOD = 300
 FAN_OSCILLATION_AMPLITUDE = 5
 WAKE_THRESHOLD_SECONDS = 5
 
-data_points = []
-sessions = []
-
-# === FASTAPI SETUP ===
+# === APP SETUP ===
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -37,30 +34,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@contextmanager
+def get_sync_session():
+    db_gen = get_db()
+    db = next(db_gen)
+    try:
+        yield db
+    finally:
+        db_gen.close()
+
+# === IDLE LOOP ===
 def idle_loop():
     while True:
         time.sleep(2)
         now = time.time()
         last_conn = latest.get("last_connected")
 
-        if last_conn and abs(now - last_conn) <= 5:
+        if last_conn and abs(now - last_conn) <= WAKE_THRESHOLD_SECONDS:
             latest["is_idle"] = False
         else:
             if not latest["is_idle"]:
                 print("💤 Entering idle state.")
+                latest["is_idle"] = True
 
-                # End the session
-                with DBSession(engine) as db:
-                    last_session = db.query(SessionModel).order_by(SessionModel.id.desc()).first()
-                    if last_session and last_session.end is None:
-                        last_session.end = datetime.fromtimestamp(now)
-                        last_session.duration = now - last_session.start.timestamp()
+                # Close session in DB
+                with get_sync_session() as db:
+                    session_obj = db.exec(select(SessionModel).order_by(SessionModel.id.desc())).first()
+                    if session_obj and session_obj.end is None:
+                        session_obj.end = datetime.fromtimestamp(now)
+                        session_obj.duration = now - session_obj.start.timestamp()
+                        db.add(session_obj)
                         db.commit()
 
-            latest["is_idle"] = True
-            
-            
-# === SIMULATION MODE ===
+# === SIMULATED DATA GENERATOR ===
 def simulate_data():
     print("🔥 Simulated mode enabled (Grill warm-up in 10 minutes)")
     start = time.time()
@@ -99,7 +106,7 @@ def simulate_data():
 
         time.sleep(2)
 
-# === STATE TRACKING ===
+# === SHARED STATE LOGGER ===
 def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=True, last_conn=None,
                   cook_start=None, cook_end=None):
     now = time.time()
@@ -131,13 +138,11 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
         "last_connected": last_conn,
     })
 
-    # ⛔ Optional limit (you may want to keep this or remove it now that it's stored in DB)
     if len(data_points) > 10000:
         data_points.pop(0)
 
-    # ✅ Database logging
-    with Session(get_db()) as session:
-        log = CookLog(
+    with get_sync_session() as session:
+        session.add(CookLog(
             timestamp=now,
             grill_temp=grill,
             probe_temp=probe,
@@ -145,11 +150,10 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
             probe_setpoint=pset,
             ambient_temp=ambient,
             connected=connected
-        )
-        session.add(log)
+        ))
         session.commit()
 
-# === API ROUTES ===
+# === ROUTES ===
 @app.get("/api/stats")
 def get_stats():
     return {
@@ -175,6 +179,12 @@ def get_history():
 def get_sessions():
     return sessions
 
-# === STARTUP ===
+@app.get("/api/test-db")
+def test_db():
+    with get_sync_session() as session:
+        rows = session.exec(select(CookLog)).all()
+        return {"status": "success", "rows": len(rows)}
+
+# === THREADS ===
 threading.Thread(target=simulate_data, daemon=True).start()
 threading.Thread(target=idle_loop, daemon=True).start()
