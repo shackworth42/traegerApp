@@ -5,7 +5,7 @@ __pycache__/
 *.pyd
 .env
 .env.*
-traeger_data.db
+traeger.db
 check_logs.py
 
 # IDEs / OS
