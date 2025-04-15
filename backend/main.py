@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from contextlib import contextmanager
+from dotenv import load_dotenv
 import os
 import time
 import threading
@@ -12,18 +13,22 @@ from datetime import datetime
 from backend.state import latest, data_points, sessions
 from backend.models import Session as SessionModel, CookLog
 from backend.db import init_db, get_db
+from pathlib import Path
+
+# === LOAD ENVIRONMENT VARIABLES ===
+load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+SIMULATE = os.getenv("SIMULATE", "false").lower() == "true"
 
 # === INIT DB ===
 init_db()
 
 # === CONFIGURATION ===
-SIMULATE = True
 GRILL_TARGET_TEMP = 250
 AMBIENT_TEMP = 70.0
 SIM_DURATION = 60 * 60 * 3
 FAN_OSCILLATION_PERIOD = 300
 FAN_OSCILLATION_AMPLITUDE = 5
-WAKE_THRESHOLD_SECONDS = 5
+WAKE_THRESHOLD_SECONDS = 1
 
 # === APP SETUP ===
 app = FastAPI()
@@ -58,7 +63,6 @@ def idle_loop():
                 print("💤 Entering idle state.")
                 latest["is_idle"] = True
 
-                # Close session in DB
                 with get_sync_session() as db:
                     session_obj = db.exec(select(SessionModel).order_by(SessionModel.id.desc())).first()
                     if session_obj and session_obj.end is None:
@@ -105,6 +109,24 @@ def simulate_data():
         )
 
         time.sleep(2)
+
+if not SIMULATE:
+    from pytraeger.manager import Manager
+    manager = Manager()
+    manager.api.do_cognito()
+    manager.api.init()
+    manager.api.get_grills()
+    grill = manager.api.grills[0]
+    mqtt = manager.api.mqtt_client
+
+    if mqtt:
+        latest["mqtt_initialized"] = True
+        mqtt.set_datahook(lambda grill_id, data: grill.update(data))
+        mqtt.start()
+    else:
+        latest["mqtt_initialized"] = False
+
+
 
 # === SHARED STATE LOGGER ===
 def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=True, last_conn=None,
@@ -156,6 +178,7 @@ def update_latest(grill, probe, ambient=None, gset=None, pset=None, connected=Tr
 # === ROUTES ===
 @app.get("/api/stats")
 def get_stats():
+    print(f"📊 /stats → SIMULATE={SIMULATE}, IDLE={latest['is_idle']}, MQTT={latest.get('mqtt_initialized')}")
     return {
         "timestamp": latest["timestamp"],
         "grill_temp": latest["grill_temp"],
@@ -169,7 +192,14 @@ def get_stats():
         "session_start_time": sessions[-1]["start"] if sessions else None,
         "last_connected": latest["last_connected"],
         "cook_timer_remaining": latest["cook_timer_remaining"],
+        "is_mqtt_live": latest.get("mqtt_initialized", False),
     }
+    print(f"[] is_simulated = {SIMULATE}")
+
+
+@app.get("/api/mode")
+def get_mode():
+    return {"simulate": SIMULATE}
 
 @app.get("/api/history")
 def get_history():
@@ -186,5 +216,9 @@ def test_db():
         return {"status": "success", "rows": len(rows)}
 
 # === THREADS ===
-threading.Thread(target=simulate_data, daemon=True).start()
+if SIMULATE:
+    threading.Thread(target=simulate_data, daemon=True).start()
+else:
+    print("🛑 Simulated data disabled — waiting for real grill input...")
+
 threading.Thread(target=idle_loop, daemon=True).start()

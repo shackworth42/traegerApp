@@ -1,0 +1,24 @@
+[Unit]
+Description=🔥 Traeger Grill Monitor (FastAPI + React)
+After=network.target
+
+[Service]
+# Adjust this if your user is not 'pi'
+User=pi
+
+# Working directory where your startall.sh lives
+WorkingDirectory=/home/pi/traegerApp
+
+# Path to your Pi-side launch script
+ExecStart=/home/pi/traegerApp/startall.sh
+
+# Ensure restart on crash or failure
+Restart=always
+RestartSec=5
+
+# Optional: Keep logs out of clutter
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

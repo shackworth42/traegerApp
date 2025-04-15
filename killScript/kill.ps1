@@ -4,4 +4,4 @@ taskkill /IM node.exe /F > $null 2>&1
 taskkill /IM python.exe /F > $null 2>&1
 
 Write-Host "✅ All dev threads cleaned up."
-# uvicorn main:app --reload
+# uvicorn backend.main:app --reload

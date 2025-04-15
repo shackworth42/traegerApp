@@ -1,6 +1,7 @@
 # backend/state.py
 
 latest = {
+    "mqtt_initialized": False,
     "timestamp": 0,
     "grill_temp": 0,
     "probe_temp": 0,
