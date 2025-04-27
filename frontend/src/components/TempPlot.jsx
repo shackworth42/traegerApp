@@ -1,29 +1,26 @@
 import React, { useState } from 'react';
 import Plot from 'react-plotly.js';
+import { getTickFormat } from '../utils/getTickFormat';
 
 const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
   const [layout, setLayout] = useState(null);
-  const [hover, setHover] = useState(true);
-  
 
   const handleRelayout = (newLayout) => {
     const yMin = newLayout['yaxis.range[0]'];
     const yMax = newLayout['yaxis.range[1]'];
     const xMin = newLayout['xaxis.range[0]'];
     const xMax = newLayout['xaxis.range[1]'];
-  
+
     let newDtick = initialDtick;
-  
+
     if (typeof yMin === 'number' && typeof yMax === 'number') {
       const yRange = yMax - yMin;
-  
       if (yRange <= 10) newDtick = 1;
       else if (yRange <= 20) newDtick = 2;
       else if (yRange <= 40) newDtick = 5;
       else if (yRange <= 80) newDtick = 10;
-      else newDtick = initialDtick;
     }
-  
+
     setLayout(prev => ({
       ...prev,
       xaxis: {
@@ -38,7 +35,6 @@ const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
       },
     }));
   };
-  
 
   const handleResetZoom = () => {
     setLayout(prev => ({
@@ -50,17 +46,12 @@ const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
     }));
   };
 
-  const maxTicks = 6;
-  const tickEvery = Math.max(1, Math.floor(x.length / maxTicks));
-  const tickIndices = x.map((_, i) => i).filter(i => i % tickEvery === 0);
-  const tickVals = tickIndices.map(i => i);
-  const tickTexts = tickIndices.map(i => x[i]);
+  const { tickvals, ticktext } = getTickFormat(x, isTSS);
+
   const isZoomed = layout?.xaxis?.range !== undefined;
   const yMin = Math.min(...y);
   const yMax = Math.max(...y);
   const yBuffer = 5;
-
-
 
   const sharedLayout = {
     autosize: true,
@@ -71,20 +62,13 @@ const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
         font: { size: 12, color: '#ffffff' },
       },
       ...(isZoomed
-        ? {
-            tickmode: 'auto',
-            nticks: 8,
-          }
-        : {
-            tickmode: 'array',
-            tickvals: tickVals.map(i => x[i]),
-            ticktext: tickTexts,
-          }),
+        ? { tickmode: 'auto', nticks: 8 }
+        : { tickmode: 'array', tickvals, ticktext }),
       showgrid: true,
       gridcolor: '#CC5C30',
       color: '#ffffff',
       ...(layout?.xaxis?.range ? { range: layout.xaxis.range } : {}),
-    },    
+    },
     yaxis: {
       title: {
         text: 'Temperature (°F)',
@@ -97,11 +81,9 @@ const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
       gridcolor: '#CC5C30',
       color: '#ffffff',
     },
-    
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: '#ffffff' },
-    hovermode: hover ? 'closest' : false,
   };
 
   return (
@@ -117,19 +99,18 @@ const TempPlot = ({ title, x, y, lineColor, isTSS, initialDtick = 20 }) => {
       </div>
 
       <div className="w-full h-[300px]">
-      <Plot
-  data={[{
-    x, // ✅ x is the full array of time strings like '10:32' or '00:45'
-    y,
-    type: 'scatter',
-    mode: 'lines',
-    line: { color: lineColor, width: 2 },
-    name: title,
-    hovertemplate: hover
-      ? `%{x}<br>%{y:.1f}°F<extra></extra>` // ✅ use time string for x
-      : 'skip',
-  }]}
-
+        <Plot
+          data={[
+            {
+              x,
+              y,
+              type: 'scatter',
+              mode: 'lines',
+              line: { color: lineColor, width: 2 },
+              name: title,
+              hovertemplate: '%{x}<br>%{y:.1f}°F<extra></extra>',
+            },
+          ]}
           layout={sharedLayout}
           config={{ responsive: true, displayModeBar: false }}
           useResizeHandler
