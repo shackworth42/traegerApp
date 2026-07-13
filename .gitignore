@@ -23,3 +23,8 @@ traeger_data.db
 # Local startup scripts
 *.bat
 *.sh
+*.ps1
+
+# The documented cross-platform development launcher is intentionally tracked.
+!scripts/
+!scripts/start-dev.ps1
