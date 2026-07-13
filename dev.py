@@ -13,12 +13,14 @@ copy from within your working directory.
 Commands
 --------
 clone   Clone the repo to your machine and open it in VS Code.
+sync    Safely update the local main branch with merged GitHub changes.
 push    Stage, commit, and push every local change ("end of day" sync).
 
 Examples
 --------
     python dev.py clone
     python dev.py clone --dir ~/projects/traegerApp
+    python dev.py sync
     python dev.py push
     python dev.py push -m "Fixed idle screen flicker"
 """
@@ -107,6 +109,31 @@ def push(args: argparse.Namespace) -> None:
     print(f"\nAll changes pushed to origin/{branch}.")
 
 
+def sync(args: argparse.Namespace) -> None:
+    """Safely fast-forward local main to the latest merged GitHub changes."""
+    repo_root = find_repo_root(Path.cwd())
+
+    status = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=repo_root, capture_output=True, text=True, check=True
+    )
+    if status.stdout.strip():
+        raise SystemExit(
+            "Local changes are present, so sync stopped without changing anything. "
+            "Commit them with `python dev.py push` (or stash/discard them deliberately), then run sync again."
+        )
+
+    current_branch = subprocess.run(
+        ["git", "branch", "--show-current"], cwd=repo_root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    if current_branch != args.branch:
+        print(f"Switching from '{current_branch}' to '{args.branch}'.")
+        run(["git", "switch", args.branch], cwd=repo_root)
+
+    run(["git", "fetch", "origin", args.branch], cwd=repo_root)
+    run(["git", "pull", "--ff-only", "origin", args.branch], cwd=repo_root)
+    print(f"\nLocal '{args.branch}' is now up to date with accepted GitHub changes.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Helper for cloning and syncing the traegerApp repo.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -123,6 +150,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-open", action="store_true", help="Don't try to open the folder in VS Code afterwards.",
     )
     clone_parser.set_defaults(func=clone)
+
+    sync_parser = subparsers.add_parser(
+        "sync", help="Safely update local main with changes merged on GitHub."
+    )
+    sync_parser.add_argument(
+        "--branch", default=DEFAULT_BRANCH, help=f"Branch to update (default: {DEFAULT_BRANCH})."
+    )
+    sync_parser.set_defaults(func=sync)
 
     push_parser = subparsers.add_parser("push", help="Stage, commit, and push all local changes.")
     push_parser.add_argument(
